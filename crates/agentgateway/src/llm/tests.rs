@@ -744,35 +744,6 @@ async fn copilot_claude_responses_request_uses_messages_route() {
 	}
 }
 
-#[test]
-fn cache_only_web_search_policy_is_copilot_only() {
-	let provider = AIProvider::Anthropic(anthropic::Provider { model: None });
-	let translation = provider
-		.chat_translation(InputFormat::Responses, Some("claude-sonnet-4-5"), None)
-		.expect("Responses-to-Messages translation");
-	let request = serde_json::from_value(json!({
-		"input": "say hi",
-		"tools": [{"type": "web_search", "external_web_access": false}]
-	}))
-	.expect("Responses request");
-
-	let Err(error) = translation.render_request(
-		types::ChatRequest::Responses(request),
-		&ChatRequestContext {
-			catalog: None,
-			provider: &provider,
-			headers: &HeaderMap::new(),
-			prompt_caching: None,
-		},
-	) else {
-		panic!("non-Copilot provider must retain generic built-in handling");
-	};
-	assert_eq!(
-		error.to_string(),
-		"unsupported conversion: Responses built-in tools require a separate Anthropic Messages tool mapping"
-	);
-}
-
 #[tokio::test]
 async fn copilot_claude_error_responses_route_preserves_status_and_message() {
 	use crate::proxy::httpproxy::PolicyClient;

@@ -14,8 +14,9 @@ route keep their existing path.
 The converter deserializes the public request into the typed Responses model, then maps the common
 request surface into Anthropic Messages. Function tools keep their names, descriptions, and
 parameter schemas. Responses custom tools keep their identity and expose free-form input through a
-`content` string schema. Namespace tools and built-in tools such as `shell`, `local_shell`, and
-`apply_patch` are rejected until their round-trip behavior is defined separately.
+`content` string schema. Namespace tools and built-in tools such as `web_search`, `shell`,
+`local_shell`, and `apply_patch` have no Messages equivalent and are dropped, as in the other
+conversions.
 
 Buffered and streaming translations return the standard Responses types. They report the upstream
 Messages model and include cache, cache-write, and reasoning token usage when the provider sends

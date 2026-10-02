@@ -317,7 +317,12 @@ fn translate_typed_tools(
 					}),
 				)
 			},
-			unsupported => return Err(unsupported_tool(unsupported)),
+			// Messages has no equivalent of a Responses built-in or namespace tool. Drop it rather than
+			// fail the whole request; the model just won't see this tool offered.
+			_ => {
+				tracing::debug!("dropping a Responses tool that Messages cannot express");
+				continue;
+			},
 		};
 		if state.tools.insert(name, kind).is_some() {
 			return Err(AIError::UnsupportedConversion(strng::literal!(
@@ -329,34 +334,20 @@ fn translate_typed_tools(
 	Ok(tools)
 }
 
-fn unsupported_tool(tool: &responses::Tool) -> AIError {
-	let kind = match tool {
-		responses::Tool::Namespace(_) => "namespace",
-		responses::Tool::LocalShell => "local_shell",
-		responses::Tool::Shell(_) => "shell",
-		responses::Tool::ApplyPatch(_) => "apply_patch",
-		responses::Tool::Function(_) | responses::Tool::Custom(_) => unreachable!(),
-		_ => "built-in",
-	};
-	AIError::UnsupportedConversion(strng::new(format!(
-		"Responses {kind} tools require a separate Anthropic Messages tool mapping"
-	)))
-}
-
 fn translate_typed_tool_choice(
 	choice: Option<&responses::ToolChoiceParam>,
 	parallel_tool_calls: Option<bool>,
 	state: &State,
 ) -> Result<Option<messages::ToolChoice>, AIError> {
 	let disable_parallel_tool_use = (parallel_tool_calls == Some(false)).then_some(true);
-	let Some(choice) = choice else {
-		return Ok(
-			(disable_parallel_tool_use.is_some() && !state.tools.is_empty()).then_some(
-				messages::ToolChoice::Auto {
-					disable_parallel_tool_use,
-				},
-			),
-		);
+	let no_choice = (disable_parallel_tool_use.is_some() && !state.tools.is_empty()).then_some(
+		messages::ToolChoice::Auto {
+			disable_parallel_tool_use,
+		},
+	);
+	// When every declared tool was dropped there is nothing left to choose from.
+	let Some(choice) = choice.filter(|_| !state.tools.is_empty()) else {
+		return Ok(no_choice);
 	};
 	let translated = match choice {
 		responses::ToolChoiceParam::Mode(responses::ToolChoiceOptions::Auto) => {
@@ -365,9 +356,6 @@ fn translate_typed_tool_choice(
 			}
 		},
 		responses::ToolChoiceParam::Mode(responses::ToolChoiceOptions::Required) => {
-			if state.tools.is_empty() {
-				return Err(invalid_tool_choice());
-			}
 			messages::ToolChoice::Any {
 				disable_parallel_tool_use,
 			}
@@ -393,11 +381,8 @@ fn translate_typed_tool_choice(
 				disable_parallel_tool_use,
 			}
 		},
-		_ => {
-			return Err(AIError::UnsupportedConversion(strng::literal!(
-				"Responses built-in and constrained tool choices are unsupported"
-			)));
-		},
+		// A choice of a built-in tool or of a constrained set of tools has no Messages equivalent.
+		_ => return Ok(no_choice),
 	};
 	Ok(Some(translated))
 }

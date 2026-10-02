@@ -354,18 +354,18 @@ fn stateful_or_execution_changing_requests_are_rejected(#[case] extra: serde_jso
 #[case::local_shell(json!({"type": "local_shell"}))]
 #[case::shell(json!({"type": "shell", "environment": {"type": "local"}}))]
 #[case::apply_patch(json!({"type": "apply_patch"}))]
-fn wrapped_tools_are_explicitly_unsupported(#[case] tool: serde_json::Value) {
-	let error = translate(&request(json!({
+#[case::cache_only_web_search(json!({"type": "web_search", "external_web_access": false}))]
+fn built_in_tools_are_dropped(#[case] tool: serde_json::Value) {
+	let (body, _) = translate(&request(json!({
 		"model": "claude",
 		"input": "hello",
-		"tools": [tool]
+		"tools": [tool],
+		"tool_choice": "auto"
 	})))
-	.expect_err("wrapped tool should be rejected");
-	assert!(
-		error
-			.to_string()
-			.contains("require a separate Anthropic Messages tool mapping")
-	);
+	.expect("built-in tool should be dropped");
+	let body: serde_json::Value = serde_json::from_slice(&body).expect("Messages request");
+	assert!(body.get("tools").is_none());
+	assert!(body.get("tool_choice").is_none());
 }
 
 #[tokio::test]
