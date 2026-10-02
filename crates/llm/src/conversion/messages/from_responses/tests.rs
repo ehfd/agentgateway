@@ -244,12 +244,11 @@ fn assert_one_safe_error(events: &[serde_json::Value]) {
 #[case::too_large(413, "request_too_large")]
 #[case::rate_limited(429, "rate_limit_error")]
 #[case::internal_server_error(500, "server_error")]
-fn error_status_map_redacts_provider_data(#[case] status: u16, #[case] expected_type: &str) {
-	let marker = "SENSITIVE_PROVIDER_ERROR";
+fn error_status_map_keeps_provider_message(#[case] status: u16, #[case] expected_type: &str) {
 	let body = Bytes::from(
 		serde_json::to_vec(&json!({
 			"type": "error",
-			"error": {"type": "invalid_request_error", "message": marker}
+			"error": {"type": "invalid_request_error", "message": "prompt is too long"}
 		}))
 		.expect("valid Anthropic error"),
 	);
@@ -259,14 +258,24 @@ fn error_status_map_redacts_provider_data(#[case] status: u16, #[case] expected_
 		serde_json::from_slice(&translated).expect("valid Responses error");
 
 	assert_eq!(value["error"]["type"], expected_type);
+	assert_eq!(value["error"]["message"], "prompt is too long");
+}
+
+#[test]
+fn error_without_anthropic_body_reports_status() {
+	let translated = translate_error(
+		&Bytes::from_static(b"upstream connect error"),
+		::http::StatusCode::BAD_GATEWAY,
+	)
+	.expect("error should translate");
+	let value: serde_json::Value =
+		serde_json::from_slice(&translated).expect("valid Responses error");
+
+	assert_eq!(value["error"]["type"], "server_error");
 	assert_eq!(
 		value["error"]["message"],
-		format!(
-			"Upstream Anthropic request failed with HTTP {}",
-			status.as_u16()
-		)
+		"Upstream Anthropic request failed with HTTP 502"
 	);
-	assert!(!String::from_utf8_lossy(&translated).contains(marker));
 }
 
 #[rstest::rstest]

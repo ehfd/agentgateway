@@ -985,7 +985,7 @@ fn push_blocks(
 	}
 }
 
-pub fn translate_error(_bytes: &Bytes, status: ::http::StatusCode) -> Result<Bytes, AIError> {
+pub fn translate_error(bytes: &Bytes, status: ::http::StatusCode) -> Result<Bytes, AIError> {
 	let error_type = match status {
 		::http::StatusCode::BAD_REQUEST => "invalid_request_error",
 		::http::StatusCode::UNAUTHORIZED => "authentication_error",
@@ -996,12 +996,17 @@ pub fn translate_error(_bytes: &Bytes, status: ::http::StatusCode) -> Result<Byt
 		::http::StatusCode::TOO_MANY_REQUESTS => "rate_limit_error",
 		_ => "server_error",
 	};
-	let body = serde_json::json!({
-		"error": {
-			"message": format!(
+	let message = serde_json::from_slice::<messages::MessagesErrorResponse>(bytes)
+		.map(|response| response.error.message)
+		.unwrap_or_else(|_| {
+			format!(
 				"Upstream Anthropic request failed with HTTP {}",
 				status.as_u16()
-			),
+			)
+		});
+	let body = serde_json::json!({
+		"error": {
+			"message": message,
 			"type": error_type,
 			"param": null,
 			"code": null,

@@ -774,7 +774,7 @@ fn cache_only_web_search_policy_is_copilot_only() {
 }
 
 #[tokio::test]
-async fn copilot_claude_error_responses_route_preserves_status_and_redacts_provider_data() {
+async fn copilot_claude_error_responses_route_preserves_status_and_message() {
 	use crate::proxy::httpproxy::PolicyClient;
 	use crate::test_helpers::proxymock::setup_proxy_test;
 
@@ -785,10 +785,9 @@ async fn copilot_claude_error_responses_route_preserves_status_and_redacts_provi
 	req.provider_state = Some(ProviderState::ResponsesToMessages {
 		state: Arc::new(conversion::messages::from_responses::State::default()),
 	});
-	let marker = "SENSITIVE_SIGNATURE_REDACTED_DATA_AND_TOOL_ARGUMENTS";
-	let upstream = Bytes::from(format!(
-		r#"{{"type":"error","error":{{"type":"rate_limit_error","message":"{marker}"}}}}"#
-	));
+	let upstream = Bytes::from_static(
+		br#"{"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}"#,
+	);
 
 	let mut upstream_response = Response::new(Body::from(upstream));
 	*upstream_response.status_mut() = ::http::StatusCode::TOO_MANY_REQUESTS;
@@ -818,9 +817,8 @@ async fn copilot_claude_error_responses_route_preserves_status_and_redacts_provi
 	assert_eq!(body["error"]["type"], "rate_limit_error");
 	assert_eq!(
 		body["error"]["message"],
-		"Upstream Anthropic request failed with HTTP 429"
+		"Number of request tokens has exceeded your per-minute rate limit"
 	);
-	assert!(!String::from_utf8_lossy(&translated).contains(marker));
 }
 
 #[tokio::test]
