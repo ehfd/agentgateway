@@ -368,6 +368,36 @@ fn built_in_tools_are_dropped(#[case] tool: serde_json::Value) {
 	assert!(body.get("tool_choice").is_none());
 }
 
+#[test]
+fn reasoning_and_hosted_history_is_skipped() {
+	let (body, _) = translate(&request(json!({
+		"model": "claude",
+		"input": [
+			{"role": "user", "content": "What is new in Rust?"},
+			{"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "opaque"},
+			{
+				"type": "web_search_call",
+				"id": "ws_1",
+				"status": "completed",
+				"action": {"type": "search", "query": "Rust release notes"}
+			},
+			{"role": "assistant", "content": "Rust 1.98 is out."},
+			{"type": "item_reference", "id": "msg_stored"},
+			{"role": "user", "content": "Thanks"}
+		]
+	})))
+	.expect("history should translate");
+	let body: serde_json::Value = serde_json::from_slice(&body).expect("Messages request");
+	assert_eq!(
+		body["messages"],
+		json!([
+			{"role": "user", "content": [{"type": "text", "text": "What is new in Rust?"}]},
+			{"role": "assistant", "content": [{"type": "text", "text": "Rust 1.98 is out."}]},
+			{"role": "user", "content": [{"type": "text", "text": "Thanks"}]}
+		])
+	);
+}
+
 #[tokio::test]
 async fn invalid_stream_state_transitions_emit_one_safe_error() {
 	let cases = [

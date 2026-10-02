@@ -545,25 +545,14 @@ fn translate_typed_input(
 					false,
 				)?;
 			},
-			InputItem::Item(Item::Reasoning(_)) => {
-				return Err(AIError::UnsupportedConversion(strng::literal!(
-					"Responses reasoning history is unsupported"
-				)));
-			},
-			InputItem::Item(_) => {
-				return Err(AIError::UnsupportedConversion(strng::literal!(
-					"Responses built-in tool and hosted input history is unsupported"
-				)));
-			},
-			InputItem::ItemReference(_) => {
-				return Err(AIError::UnsupportedConversion(strng::literal!(
-					"Responses item references are unsupported"
-				)));
-			},
-			InputItem::Program(_) | InputItem::ProgramOutput(_) | InputItem::CompactionTrigger(_) => {
-				return Err(AIError::UnsupportedConversion(strng::literal!(
-					"Responses programmatic and compaction input is unsupported"
-				)));
+			// Reasoning, built-in tool calls, item references and the other hosted items have no
+			// Messages equivalent; skip them as the other Responses conversions do.
+			InputItem::Item(_)
+			| InputItem::ItemReference(_)
+			| InputItem::Program(_)
+			| InputItem::ProgramOutput(_)
+			| InputItem::CompactionTrigger(_) => {
+				tracing::debug!("skipping a Responses input item that Messages cannot express");
 			},
 		}
 	}
