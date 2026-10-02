@@ -264,9 +264,15 @@ pub mod from_completions {
 		catalog: crate::model_catalog::Catalog<'_>,
 	) -> Result<Vec<u8>, AIError> {
 		let typed = json::convert::<_, completions::Request>(req).map_err(AIError::RequestMarshal)?;
-		let model_id = typed.model.clone().unwrap_or_default();
-		let xlated = translate_internal(typed, model_id, catalog);
-		serde_json::to_vec(&xlated).map_err(AIError::RequestMarshal)
+		serde_json::to_vec(&translate_typed(typed, catalog)).map_err(AIError::RequestMarshal)
+	}
+
+	pub(crate) fn translate_typed(
+		req: completions::Request,
+		catalog: crate::model_catalog::Catalog<'_>,
+	) -> messages::Request {
+		let model_id = req.model.clone().unwrap_or_default();
+		translate_internal(req, model_id, catalog)
 	}
 
 	fn translate_internal(
@@ -529,7 +535,9 @@ pub mod from_completions {
 		Ok(Box::new(passthrough))
 	}
 
-	fn translate_response_internal(resp: messages::MessagesResponse) -> completions::Response {
+	pub(crate) fn translate_response_internal(
+		resp: messages::MessagesResponse,
+	) -> completions::Response {
 		// Convert Anthropic content blocks to OpenAI message content
 		let mut tool_calls: Vec<completions::MessageToolCalls> = Vec::new();
 		let mut content = None;

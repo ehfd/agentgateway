@@ -338,6 +338,8 @@ const CHAT_TRANSLATIONS: &[ChatTranslation] = {
 		// Completions
 		chat(InputFormat::Completions, ChatFormat::AnthropicMessages),
 		chat(InputFormat::Completions, ChatFormat::BedrockConverse),
+		// Composed through Messages, so it comes after the direct conversions.
+		chat(InputFormat::Completions, ChatFormat::OpenAIResponses),
 		// Messages
 		chat(InputFormat::Messages, ChatFormat::OpenAICompletions),
 		chat(InputFormat::Messages, ChatFormat::OpenAIResponses),
@@ -385,8 +387,11 @@ fn render_openai_responses(
 			serde_json::to_vec(&req).map_err(AIError::RequestMarshal)
 		},
 		types::ChatRequest::Messages(req) => conversion::responses::from_messages::translate(&req),
-		_ => Err(AIError::UnsupportedConversion(strng::literal!(
-			"expected responses request"
+		types::ChatRequest::Completions(req) => {
+			conversion::responses::from_completions::translate(&req, ctx.catalog)
+		},
+		types::ChatRequest::Gemini(_) => Err(AIError::UnsupportedConversion(strng::literal!(
+			"gemini to responses"
 		))),
 	}
 }
@@ -584,6 +589,9 @@ impl ChatTranslation {
 			ChatFormat::OpenAIResponses => match self.input {
 				InputFormat::Responses => AIProvider::parse_response::<types::responses::Response>(bytes),
 				InputFormat::Messages => conversion::responses::from_messages::translate_response(bytes),
+				InputFormat::Completions => {
+					conversion::responses::from_completions::translate_response(bytes)
+				},
 				_ => Err(AIError::UnsupportedConversion(strng::format!(
 					"from {:?} to {:?}",
 					self.output,
@@ -679,6 +687,14 @@ impl ChatTranslation {
 				}),
 				InputFormat::Messages => resp.map(|b| {
 					conversion::responses::from_messages::translate_stream(
+						b,
+						ctx.buffer_limit,
+						ctx.logger,
+						ctx.log_content,
+					)
+				}),
+				InputFormat::Completions => resp.map(|b| {
+					conversion::responses::from_completions::translate_stream(
 						b,
 						ctx.buffer_limit,
 						ctx.logger,
@@ -826,7 +842,7 @@ impl ChatTranslation {
 
 			ChatFormat::OpenAIResponses => match format {
 				ChatErrorFormat::OpenAI => match self.input {
-					InputFormat::Responses => Ok(bytes.clone()),
+					InputFormat::Responses | InputFormat::Completions => Ok(bytes.clone()),
 					InputFormat::Messages => {
 						conversion::responses::from_messages::translate_error(bytes, status)
 					},

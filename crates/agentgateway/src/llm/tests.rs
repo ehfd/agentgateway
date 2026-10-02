@@ -610,6 +610,42 @@ fn responses_routing_preserves_non_messages_formats() {
 }
 
 #[test]
+fn completions_routing_falls_back_to_responses() {
+	let copilot = AIProvider::Copilot(copilot::Provider { model: None });
+	let providers = [
+		(
+			"Copilot gpt-5",
+			&copilot,
+			"gpt-5",
+			ChatFormat::OpenAIResponses,
+		),
+		(
+			"Copilot gpt-5.4",
+			&copilot,
+			"gpt-5.4",
+			ChatFormat::OpenAICompletions,
+		),
+		(
+			"custom Responses",
+			&custom_provider(custom::ProviderFormat::Responses),
+			"custom-model",
+			ChatFormat::OpenAIResponses,
+		),
+	];
+
+	for (name, provider, model, expected) in providers {
+		assert_eq!(
+			provider
+				.chat_translation(InputFormat::Completions, Some(model), None)
+				.expect("Completions routing should be available")
+				.output,
+			expected,
+			"{name}"
+		);
+	}
+}
+
+#[test]
 fn responses_to_messages_buffered_requires_matching_provider_state() {
 	let translation = ChatTranslation {
 		input: InputFormat::Responses,
