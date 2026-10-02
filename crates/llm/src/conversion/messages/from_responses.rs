@@ -1339,7 +1339,6 @@ enum StreamBlock {
 	/// client while malformed upstream streams are still rejected.
 	DroppedThinking {
 		index: usize,
-		signature_seen: bool,
 	},
 	/// A redacted_thinking block being discarded. These blocks have no deltas.
 	DroppedRedactedThinking {
@@ -1607,22 +1606,9 @@ fn stream_usage(
 	initial: &messages::Usage,
 	terminal: &messages::MessageDeltaUsage,
 ) -> Result<responses::ResponseUsage, ()> {
-	let thinking = stream_thinking_tokens(initial, terminal)?;
-	if terminal
-		.input_tokens
-		.is_some_and(|value| value < initial.input_tokens)
-		|| terminal
-			.output_tokens
-			.is_some_and(|value| value < initial.output_tokens)
-		|| terminal
-			.cache_read_input_tokens
-			.is_some_and(|value| value < initial.cache_read_input_tokens.unwrap_or_default())
-		|| terminal
-			.cache_creation_input_tokens
-			.is_some_and(|value| value < initial.cache_creation_input_tokens.unwrap_or_default())
-	{
-		return Err(());
-	}
+	// The terminal counts replace the initial ones. They can be lower, for example when a
+	// provider moves part of the input into the cache counts by the end of the stream.
+	let thinking = stream_thinking_tokens(initial, terminal);
 	let input = terminal.input_tokens.unwrap_or(initial.input_tokens);
 	let output = terminal.output_tokens.unwrap_or(initial.output_tokens);
 	let cache_read = terminal
@@ -1642,7 +1628,7 @@ fn stream_service_tier(tier: Option<&str>) -> Result<Option<responses::ServiceTi
 fn stream_thinking_tokens(
 	initial: &messages::Usage,
 	terminal: &messages::MessageDeltaUsage,
-) -> Result<Option<usize>, ()> {
+) -> Option<usize> {
 	let initial = initial
 		.output_tokens_details
 		.as_ref()
@@ -1651,13 +1637,7 @@ fn stream_thinking_tokens(
 		.output_tokens_details
 		.as_ref()
 		.and_then(|details| details.thinking_tokens);
-	if terminal
-		.zip(initial)
-		.is_some_and(|(terminal, initial)| terminal < initial)
-	{
-		return Err(());
-	}
-	Ok(terminal.or(initial))
+	terminal.or(initial)
 }
 
 fn commit_stream_telemetry(
@@ -1676,7 +1656,7 @@ fn commit_stream_telemetry(
 		.cache_creation_input_tokens
 		.or(initial.cache_creation_input_tokens)
 		.map(|value| value as u64);
-	let reasoning_tokens = stream_thinking_tokens(initial, terminal)?
+	let reasoning_tokens = stream_thinking_tokens(initial, terminal)
 		.map(u64::try_from)
 		.transpose()
 		.map_err(|_| ())?;
@@ -1886,10 +1866,7 @@ pub fn translate_stream(
 							// thinking block is valid upstream output. Absorb it and its deltas rather
 							// than terminating the stream. See response_output for the buffered path.
 							messages::ContentBlock::Thinking { .. } => {
-								stream.active_block = Some(StreamBlock::DroppedThinking {
-									index,
-									signature_seen: false,
-								});
+								stream.active_block = Some(StreamBlock::DroppedThinking { index });
 								Ok(Vec::new())
 							},
 							messages::ContentBlock::RedactedThinking { .. } => {
@@ -1960,23 +1937,12 @@ pub fn translate_stream(
 									DeclaredTool::Custom => Vec::new(),
 								}
 							},
+							// Only Anthropic signs thinking; other Messages providers stream it unsigned.
 							(
-								StreamBlock::DroppedThinking {
-									index: block_index,
-									signature_seen: false,
-								},
-								messages::ContentBlockDelta::ThinkingDelta { .. },
+								StreamBlock::DroppedThinking { index: block_index },
+								messages::ContentBlockDelta::ThinkingDelta { .. }
+								| messages::ContentBlockDelta::SignatureDelta { .. },
 							) if *block_index == index => Vec::new(),
-							(
-								StreamBlock::DroppedThinking {
-									index: block_index,
-									signature_seen,
-								},
-								messages::ContentBlockDelta::SignatureDelta { signature },
-							) if *block_index == index && !*signature_seen && !signature.is_empty() => {
-								*signature_seen = true;
-								Vec::new()
-							},
 							_ => return Err(()),
 						};
 						stream.active_block = Some(block);
@@ -1985,10 +1951,9 @@ pub fn translate_stream(
 					messages::MessagesStreamEvent::ContentBlockStop { index } => {
 						let block = stream.active_block.take().ok_or(())?;
 						match block {
-							StreamBlock::DroppedThinking {
-								index: block_index,
-								signature_seen: true,
-							} if block_index == index => Ok(Vec::new()),
+							StreamBlock::DroppedThinking { index: block_index } if block_index == index => {
+								Ok(Vec::new())
+							},
 							StreamBlock::DroppedRedactedThinking { index: block_index }
 								if block_index == index =>
 							{

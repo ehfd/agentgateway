@@ -711,6 +711,8 @@ pub mod typed {
 		SearchResult(ContentSearchResultBlock),
 		Thinking {
 			thinking: String,
+			/// Only Anthropic signs thinking; other Messages providers leave the signature out.
+			#[serde(default)]
 			signature: String,
 		},
 		RedactedThinking {

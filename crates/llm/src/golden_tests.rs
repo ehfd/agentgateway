@@ -906,6 +906,7 @@ mod responses {
 	const ANTHROPIC_STREAM_RESPONSES: &[(&str, &[&str])] = &[
 		("stream_basic", ALL_ANTHROPIC),
 		("stream_thinking", ALL_ANTHROPIC),
+		("stream_thinking_unsigned", ALL_ANTHROPIC),
 		(
 			"stream_message_delta_usage",
 			&[MESSAGES_TO_MESSAGES, MESSAGES_TO_COMPLETIONS],
